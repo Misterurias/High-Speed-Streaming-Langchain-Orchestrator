@@ -1,410 +1,65 @@
 <!doctype html>
+<!--
+  The chat page's structure. Look and behavior live in separate files:
+    css/styles.css        how it looks
+    js/main.js            what happens when you type and send (start here)
+  Messages are added to #thread by JavaScript as the conversation goes.
+-->
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Orchestrator Chat</title>
-<script src="/static/vendor/marked.min.js"></script>
-<script src="/static/vendor/purify.min.js"></script>
-<style>
-  :root {
-    --bg: #f7f7f5;
-    --surface: #ffffff;
-    --text: #1d1d1b;
-    --muted: #6b6b66;
-    --border: #e4e3de;
-    --user-bg: #ecebe6;
-    --accent: #2f5bd3;
-    --accent-text: #ffffff;
-    --math: #1f7a52;
-    --math-bg: #e4f3ea;
-    --general: #5a4bb5;
-    --general-bg: #ecebfa;
-    --fallback: #9a5b12;
-    --fallback-bg: #fbefdc;
-    --error: #b42318;
-    --error-bg: #fdecea;
-    --code-bg: #f0efea;
-    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.06);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #161615;
-      --surface: #1f1f1d;
-      --text: #ecebe6;
-      --muted: #9b9a94;
-      --border: #33332f;
-      --user-bg: #2a2a27;
-      --accent: #7f9cff;
-      --accent-text: #10131c;
-      --math: #6fd3a0;
-      --math-bg: #1c3328;
-      --general: #b3a8ff;
-      --general-bg: #29254a;
-      --fallback: #f0b46a;
-      --fallback-bg: #3a2b16;
-      --error: #ff8a80;
-      --error-bg: #3b1d1a;
-      --code-bg: #2a2a27;
-      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
-    }
-  }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orchestrator Chat</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
 
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-  }
+  <!-- Third-party libraries, bundled locally (no internet needed):
+       marked turns Markdown into HTML; DOMPurify removes anything unsafe from it. -->
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/vendor/purify.min.js"></script>
 
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-  }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
-  .brand-mark {
-    width: 26px; height: 26px; border-radius: 7px;
-    background: var(--accent); color: var(--accent-text);
-    display: grid; place-items: center; font-size: 14px; font-weight: 700;
-  }
-  .brand small { color: var(--muted); font-weight: 400; margin-left: 4px; }
-  .ghost-btn {
-    border: 1px solid var(--border); background: var(--surface); color: var(--text);
-    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer;
-  }
-  .ghost-btn:hover { border-color: var(--muted); }
-
-  main { flex: 1; overflow-y: auto; }
-  .thread { max-width: 760px; margin: 0 auto; padding: 24px 16px 8px; }
-
-  .empty { text-align: center; padding: 12vh 0 0; }
-  .empty h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; }
-  .empty p { color: var(--muted); margin: 0 0 24px; }
-  .suggestions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; text-align: left; }
-  .suggestion {
-    border: 1px solid var(--border); background: var(--surface); color: var(--text);
-    border-radius: 12px; padding: 12px 14px; font: inherit; font-size: 14px; cursor: pointer; text-align: left;
-    display: flex; flex-direction: column; justify-content: flex-start;
-  }
-  .suggestion:hover { border-color: var(--accent); }
-  .suggestion span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 2px; }
-
-  .msg { margin: 0 0 22px; }
-  .msg.user { display: flex; justify-content: flex-end; }
-  .msg.user .bubble {
-    background: var(--user-bg); padding: 10px 14px; border-radius: 16px 16px 4px 16px;
-    max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere;
-  }
-
-  .badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 999px; margin-bottom: 8px;
-  }
-  .badge.pending { color: var(--muted); background: var(--user-bg); }
-  .badge.math { color: var(--math); background: var(--math-bg); }
-  .badge.general { color: var(--general); background: var(--general-bg); }
-  .badge.fallback { color: var(--fallback); background: var(--fallback-bg); }
-  .badge code { font-size: 12px; background: transparent; padding: 0; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1s infinite ease-in-out; }
-  @keyframes pulse { 50% { opacity: .25; } }
-
-  .content { overflow-wrap: anywhere; }
-  .content > :first-child { margin-top: 0; }
-  .content > :last-child { margin-bottom: 0; }
-  .content p { margin: 0 0 12px; }
-  .content ul, .content ol { margin: 0 0 12px; padding-left: 22px; }
-  .content code { background: var(--code-bg); padding: 1px 5px; border-radius: 5px; font-size: .9em; }
-  .content pre { background: var(--code-bg); padding: 12px 14px; border-radius: 10px; overflow-x: auto; }
-  .content pre code { background: none; padding: 0; }
-  .content a { color: var(--accent); }
-  .streaming .content::after {
-    content: ""; display: inline-block; width: 8px; height: 1.05em; margin-left: 2px;
-    background: var(--text); vertical-align: -2px; animation: blink 1s steps(1) infinite;
-  }
-  @keyframes blink { 50% { opacity: 0; } }
-
-  .meta { color: var(--muted); font-size: 12px; margin-top: 8px; }
-  .error-box {
-    color: var(--error); background: var(--error-bg); border-radius: 10px;
-    padding: 8px 12px; font-size: 14px; margin-top: 8px;
-  }
-
-  footer { padding: 8px 16px 18px; background: var(--bg); }
-  .composer {
-    max-width: 760px; margin: 0 auto;
-    display: flex; align-items: flex-end; gap: 8px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
-    padding: 8px 8px 8px 16px; box-shadow: var(--shadow);
-  }
-  .composer:focus-within { border-color: var(--accent); }
-  textarea {
-    flex: 1; border: 0; outline: 0; resize: none; background: transparent; color: var(--text);
-    font: inherit; max-height: 200px; padding: 6px 0;
-  }
-  .send {
-    width: 38px; height: 38px; border-radius: 10px; border: 0; flex: none;
-    background: var(--accent); color: var(--accent-text); cursor: pointer; display: grid; place-items: center;
-  }
-  .send:disabled { opacity: .35; cursor: default; }
-  .send svg { width: 18px; height: 18px; }
-  .hint { max-width: 760px; margin: 6px auto 0; text-align: center; color: var(--muted); font-size: 12px; }
-
-  @media (max-width: 600px) {
-    .brand small { display: none; }
-    .msg.user .bubble { max-width: 90%; }
-    .empty { padding-top: 6vh; }
-    .suggestions { grid-template-columns: 1fr; }
-  }
-</style>
+  <!-- Our code. type="module" lets the JS files import from each other. -->
+  <script type="module" src="/static/js/main.js"></script>
 </head>
 <body>
-<header>
-  <div class="brand"><div class="brand-mark">O</div>Orchestrator<small>LangChain · streaming</small></div>
-  <button class="ghost-btn" id="newChat" type="button">New chat</button>
-</header>
+  <header>
+    <div class="brand">
+      <div class="brand-mark">O</div>
+      Orchestrator
+      <small id="modelName">LangChain · streaming</small>
+    </div>
+    <button class="ghost-btn" id="newChat" type="button">New chat</button>
+  </header>
 
-<main id="scroller">
-  <div class="thread" id="thread">
-    <div class="empty" id="empty">
-      <h1>What can I help with?</h1>
-      <p>Math questions go to a calculator tool. Everything else goes to the general model.</p>
-      <div class="suggestions">
-        <button class="suggestion" type="button"><span>Math</span>If I buy 3 boxes of 12 cookies and eat 5, how many are left?</button>
-        <button class="suggestion" type="button"><span>General</span>Explain what an API is in two sentences.</button>
-        <button class="suggestion" type="button"><span>Math</span>What is the square root of pi? Explain it.</button>
-        <button class="suggestion" type="button"><span>General</span>Give me 3 tips for writing clean Python.</button>
+  <main id="scroller">
+    <div class="thread" id="thread">
+      <!-- Shown until the first message is sent. -->
+      <div class="empty" id="empty">
+        <h1>What can I help with?</h1>
+        <p>Math questions go to a calculator tool. Everything else goes to the general model.</p>
+        <div class="suggestions">
+          <button class="suggestion" type="button" data-query="If I buy 3 boxes of 12 cookies and eat 5, how many are left?">
+            <span class="suggestion-label">Math</span>If I buy 3 boxes of 12 cookies and eat 5, how many are left?
+          </button>
+          <button class="suggestion" type="button" data-query="Explain what an API is in two sentences.">
+            <span class="suggestion-label">General</span>Explain what an API is in two sentences.
+          </button>
+          <button class="suggestion" type="button" data-query="What is the square root of pi? Explain it.">
+            <span class="suggestion-label">Math</span>What is the square root of pi? Explain it.
+          </button>
+          <button class="suggestion" type="button" data-query="Give me 3 tips for writing clean Python.">
+            <span class="suggestion-label">General</span>Give me 3 tips for writing clean Python.
+          </button>
+        </div>
       </div>
     </div>
-  </div>
-</main>
+  </main>
 
-<footer>
-  <form class="composer" id="composer">
-    <textarea id="input" rows="1" placeholder="Ask anything…" maxlength="2000" autofocus></textarea>
-    <button class="send" id="send" type="submit" aria-label="Send" disabled></button>
-  </form>
-  <div class="hint">Enter to send · Shift+Enter for a new line</div>
-</footer>
-
-<script>
-(() => {
-  const MAX_HISTORY = 20;
-  const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
-  const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-
-  const thread = document.getElementById("thread");
-  const scroller = document.getElementById("scroller");
-  const empty = document.getElementById("empty");
-  const form = document.getElementById("composer");
-  const input = document.getElementById("input");
-  const sendBtn = document.getElementById("send");
-
-  let history = [];          // completed turns: {role, content}
-  let controller = null;     // AbortController for the in-flight request
-
-  // ---------- rendering helpers ----------
-  const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-  function renderMarkdown(text) {
-    if (window.marked && window.DOMPurify) {
-      return DOMPurify.sanitize(marked.parse(text, { breaks: true }));
-    }
-    return escapeHtml(text).replace(/\n/g, "<br>");  // CDN unavailable: plain text
-  }
-
-  function nearBottom() {
-    return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
-  }
-  function scrollToBottom(force) {
-    if (force || nearBottom()) scroller.scrollTop = scroller.scrollHeight;
-  }
-
-  function addUserMessage(text) {
-    const el = document.createElement("div");
-    el.className = "msg user";
-    el.innerHTML = `<div class="bubble"></div>`;
-    el.querySelector(".bubble").textContent = text;
-    thread.appendChild(el);
-  }
-
-  function addAssistantMessage() {
-    const el = document.createElement("div");
-    el.className = "msg assistant streaming";
-    el.innerHTML = `<div class="badge pending"><span class="dot"></span>Routing…</div><div class="content"></div>`;
-    thread.appendChild(el);
-    return {
-      el,
-      badge: el.querySelector(".badge"),
-      content: el.querySelector(".content"),
-    };
-  }
-
-  function setBadge(badge, plan) {
-    if (plan.routed_by === "fallback") {
-      badge.className = "badge fallback";
-      badge.textContent = "General · fallback";
-      badge.title = plan.note || "";
-    } else if (plan.route === "math") {
-      badge.className = "badge math";
-      badge.innerHTML = `Calculator · <code></code>`;
-      badge.querySelector("code").textContent = `${plan.expression} = ${plan.result}`;
-      badge.title = plan.routed_by === "fast_path" ? "Routed instantly (no LLM call)" : "Routed by LLM";
-    } else {
-      badge.className = "badge general";
-      badge.textContent = "General";
-    }
-  }
-
-  function setBusy(busy) {
-    sendBtn.innerHTML = busy ? ICON_STOP : ICON_SEND;
-    sendBtn.setAttribute("aria-label", busy ? "Stop" : "Send");
-    sendBtn.disabled = busy ? false : input.value.trim() === "";
-  }
-
-  // ---------- SSE over fetch (EventSource can't POST) ----------
-  async function* readSSE(response) {
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-      let boundary;
-      while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-        const raw = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        let event = "message", data = "";
-        for (const line of raw.split("\n")) {
-          if (line.startsWith(":")) continue;                 // keep-alive ping
-          if (line.startsWith("event:")) event = line.slice(6).trim();
-          else if (line.startsWith("data:")) data += line.slice(5).trim();
-        }
-        if (data) yield { event, data: JSON.parse(data) };
-      }
-    }
-  }
-
-  async function ask(query) {
-    empty.remove?.();
-    addUserMessage(query);
-    const msg = addAssistantMessage();
-    scrollToBottom(true);
-
-    controller = new AbortController();
-    setBusy(true);
-
-    let text = "";
-    let finished = false;
-    let renderQueued = false;
-    const render = () => {
-      renderQueued = false;
-      msg.content.innerHTML = renderMarkdown(text);
-      scrollToBottom();
-    };
-
-    try {
-      const res = await fetch("/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, history: history.slice(-MAX_HISTORY) }),
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
-
-      for await (const { event, data } of readSSE(res)) {
-        if (event === "route") {
-          setBadge(msg.badge, data);
-        } else if (event === "token") {
-          text += data.text;
-          if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); }
-        } else if (event === "done") {
-          finished = true;
-          const meta = document.createElement("div");
-          meta.className = "meta";
-          const ttft = data.ttft_ms != null ? `first token ${data.ttft_ms} ms · ` : "";
-          meta.textContent = `${ttft}total ${(data.total_ms / 1000).toFixed(1)} s`;
-          msg.el.appendChild(meta);
-        } else if (event === "error") {
-          finished = true;
-          showError(msg, data.message);
-        }
-      }
-      if (!finished) showError(msg, "The connection closed before the answer finished.");
-    } catch (err) {
-      if (err.name === "AbortError") {
-        const meta = document.createElement("div");
-        meta.className = "meta";
-        meta.textContent = "Stopped";
-        msg.el.appendChild(meta);
-        finished = true;  // keep the partial answer in history
-      } else {
-        showError(msg, "Couldn't reach the server. Is it running?");
-      }
-    } finally {
-      render();
-      msg.el.classList.remove("streaming");
-      if (msg.badge.classList.contains("pending")) msg.badge.remove();
-      if (finished && text.trim()) {
-        history.push({ role: "user", content: query }, { role: "assistant", content: text });
-      }
-      controller = null;
-      setBusy(false);
-      input.focus();
-    }
-  }
-
-  function showError(msg, message) {
-    const box = document.createElement("div");
-    box.className = "error-box";
-    box.textContent = message;
-    msg.el.appendChild(box);
-  }
-
-  // ---------- input handling ----------
-  function autoGrow() {
-    input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 200) + "px";
-  }
-
-  function submit() {
-    if (controller) { controller.abort(); return; }   // button acts as Stop while streaming
-    const query = input.value.trim();
-    if (!query) return;
-    input.value = "";
-    autoGrow();
-    ask(query);
-  }
-
-  form.addEventListener("submit", (e) => { e.preventDefault(); submit(); });
-  input.addEventListener("input", () => { autoGrow(); if (!controller) setBusy(false); });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      if (!controller) submit();
-    }
-  });
-
-  document.querySelectorAll(".suggestion").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const label = btn.querySelector("span");
-      ask(btn.textContent.replace(label.textContent, "").trim());
-    });
-  });
-
-  document.getElementById("newChat").addEventListener("click", () => {
-    if (controller) controller.abort();
-    location.reload();
-  });
-
-  setBusy(false);
-})();
-</script>
+  <footer>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" placeholder="Ask anything…" autofocus></textarea>
+      <button class="send" id="send" type="submit" aria-label="Send" disabled></button>
+    </form>
+    <div class="hint">Enter to send · Shift+Enter for a new line</div>
+  </footer>
 </body>
 </html>

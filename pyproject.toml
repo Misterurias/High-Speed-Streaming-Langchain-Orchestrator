@@ -1,0 +1,12 @@
+# Test settings. Plain `pytest` uses everything below:
+#   -v                         list every test by name with PASSED / FAILED
+#   --cov=app                  measure which lines of app/ the tests ran
+#   --cov-report=term-missing  print a coverage table, with the line numbers never run
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov=app --cov-report=term-missing"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+branch = true   # also check both sides of every if/else were exercised

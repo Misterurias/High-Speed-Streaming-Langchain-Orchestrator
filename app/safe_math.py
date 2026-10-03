@@ -1,8 +1,22 @@
-"""A small, safe arithmetic evaluator used as the "math tool".
+"""
+The calculator tool: safely computes expressions like "(3 + 4) * sqrt(16)".
 
-Never pass model output to eval(). This module parses the expression into a
-Python AST and only evaluates an allow-list of node types, operators,
-functions and constants. Anything else raises MathError.
+Why not just use Python's eval()?
+    The expression is written by the router model, and eval() would run ANY
+    Python code it was given, e.g. "__import__('os').system('rm -rf ~')".
+
+How this works instead:
+    1. `ast.parse` turns the text into a tree (an "abstract syntax tree"):
+           "3 + 4 * 2"   →   Add( 3, Mult(4, 2) )
+    2. `_eval` walks the tree and only knows how to handle an allow-list of
+       pieces: numbers, + - * / // % **, the constants pi and e, and a short
+       list of math functions. Anything else (names, imports, attribute
+       access, strings, lists) raises MathError.
+    3. Size limits stop inputs that are valid math but would freeze the server,
+       like 9**9**9 (a number with hundreds of millions of digits).
+
+This file has no LangChain or LLM code. It's plain, deterministic Python,
+which is the point: the model decides WHAT to compute, this computes it.
 """
 
 from __future__ import annotations

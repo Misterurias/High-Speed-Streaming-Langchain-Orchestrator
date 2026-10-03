@@ -1,35 +1,39 @@
-# Loom talking points (~4 minutes)
+# Loom talking points (~5 minutes)
 
-Keep `app/chains.py`, `app/main.py`, and a terminal open. Not a script to read, just the order to hit things.
+An order to walk through, not a script. Have the browser, a terminal, and the editor open.
 
-## 1. What it does (20s)
-- One endpoint, `POST /ask`. LangChain decides if the query is math or general, then streams the answer back over Server-Sent Events.
-- Live demo right away: run `python scripts/ask.py "If I buy 3 boxes of 12 cookies and eat 5, how many are left?"`. Point out the `route` event first, then tokens arriving one by one, then `done` with time-to-first-token.
-- Run a general one too: `python scripts/ask.py "Explain what an API is in two sentences"`.
+## 1. Demo first (45s)
+- Open http://localhost:8000. Click the cookies suggestion: the badge says **Calculator · 3*12-5 = 31**, then the answer streams in.
+- Ask "now double that" to show follow-ups use history (the router resolves "that" to 31).
+- Ask "Explain what an API is in two sentences": purple **General** badge, Markdown formatting.
+- Start a long question and press Stop to show cancellation.
 
-## 2. Routing with LangChain (`chains.py`, ~90s)
-- The whole pipeline is one Runnable: `RunnablePassthrough.assign(plan=router) | RunnableBranch(math_chain, general_chain)`.
-- Router has three layers:
-  1. Fast path: if the query is already an expression like `12*(3+4)`, no LLM call at all.
-  2. One LLM call with `with_structured_output(RouteDecision)`. It returns the route *and* the expression in the same call, so math doesn't need an extra round trip.
-  3. Fallbacks: if the router errors or the expression is bad, it drops to the general chain instead of failing.
-- Key point: the LLM never does the arithmetic. It writes the expression, and `safe_math.py` computes it. The answer prompt gets the verified result and is told not to contradict it.
+## 2. My design goals (15s)
+Say the four goals out loud, then show each one:
+1. **Understandable:** a newcomer can follow a question through the code.
+2. **One source of truth:** models and limits live in one file.
+3. **Tested and visible:** every test has a readable name, with coverage.
+4. **Separated front end:** HTML, CSS, and JS each in their own files.
 
-## 3. The math tool (`safe_math.py`, ~30s)
-- No `eval()`. It parses with Python's `ast` and only allows numbers, operators, and a list of math functions.
-- Show the test cases: `__import__('os')` gets rejected, `9**9**9` gets blocked before it can hang the server.
+## 3. Understandable: follow one question (2 min)
+Open `docs/ARCHITECTURE.md` briefly to show it exists, then walk the code in request order:
+- `main.py`: the routes, and the docstring listing which file handles each step.
+- `routing.py`: the diagram at the top. Fast path → one LLM call with structured output (`RouteDecision`) → calculator. Point out that every failure falls back to general.
+- `safe_math.py`: no `eval()`. It parses into a tree and only allows math.
+- `chains.py`: `RunnablePassthrough.assign` adds the plan, `RunnableBranch` is an if/else, `|` pipes steps together.
+- `streaming.py`: `astream_events` gives a play-by-play; I forward the router result as `route` and only the answer model's tokens as `token`.
+- Front end: `js/main.js` header lists every JS file's job; `sse.js` explains why fetch is used instead of EventSource (POST bodies).
 
-## 4. Streaming (`main.py`, ~60s)
-- `astream_events` gives every event in the pipeline. I forward only tokens from models tagged `"answer"`, so router tokens don't leak into the user's stream.
-- `EventSourceResponse` sends proper SSE. Pings keep the connection alive, and `X-Accel-Buffering: no` stops proxies from buffering chunks.
-- If the client disconnects, the generator gets cancelled, which cancels the LLM call.
-- Errors mid-stream come back as an `error` event with a request ID; real details stay in server logs.
+## 4. One source of truth (30s)
+- `config.py`: change `MODEL` and both router and answerer switch.
+- `.env` holds only the key.
+- The header in the UI shows the model name, read from `/api/config`, so the front end doesn't hard-code it either.
+- Show `test_no_model_name_appears_outside_config_py`: it fails if anyone writes a model name somewhere else.
 
-## 5. Security and config (`config.py`, ~30s)
-- Keys only come from environment variables or `.env` (git-ignored, with `.env.example` committed).
-- Stored as `SecretStr`, and the app refuses to start if the key is missing.
-- Models are `provider:model` strings, so swapping Anthropic and OpenAI is a config change.
+## 5. Tests (45s)
+- Run `pytest tests/test_routing.py` to show named tests for one file.
+- Run `pytest` for the whole suite: every test listed by name, then the coverage table at 100%.
+- Mention: fake models, so no API key, no network, runs in seconds.
 
-## 6. Wrap up (20s)
-- Run `pytest -q`: 30 tests, using fake models, so no key needed.
-- Next steps for production: rate limiting and auth, tracing with LangSmith, caching, and an eval set for router accuracy.
+## 6. Wrap up (15s)
+Production next steps: authentication and rate limiting on `/ask`, tracing with LangSmith, an eval set to measure routing accuracy, and caching repeated questions.
